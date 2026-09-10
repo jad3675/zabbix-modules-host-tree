@@ -168,19 +168,20 @@ abstract class CControllerBGHost extends CController {
 		}
 		unset($host);
 
-		$filter['sortorder'] == 'ASC' ? ksort($host_groups) : krsort($host_groups);
+		$filter['sortorder'] == ZBX_SORT_DOWN ? krsort($host_groups) : ksort($host_groups);
 
 		$hosts_sorted_by_group = [];
 		foreach ($host_groups as $host_group_name => $host_group) {
 			$this->add_hosts_of_child_group($hosts_sorted_by_group, $hosts, $host_groups, $host_group_name, $filter);
 		}
 
-		$view_curl = (new CUrl())->setArgument('action', 'bghostcomp.view');
+		// No host-level pagination. This is a group tree, and paginating by host silently drops any group whose
+		// hosts happen to fall on a later page (that was the "tree stops partway through the alphabet" symptom).
+		// Render the whole tree instead; groups are collapsed by default so the DOM stays light. The first
+		// host.get above is still bounded by the global search limit.
+		$paging = null;
 
-		// Split result array and create paging.
-		$paging = CPagerHelper::paginate($filter['page'], $hosts_sorted_by_group, $filter['sortorder'], $view_curl);
-
-		// Get additional data to limited host amount.
+		// Get additional data for the hosts in the tree.
 		$hosts = API::Host()->get([
 			'output' => ['hostid', 'name', 'status', 'maintenance_status', 'maintenanceid', 'maintenance_type'],
 			'selectInterfaces' => ['ip', 'dns', 'port', 'main', 'type', 'useip', 'available', 'error', 'details'],
@@ -229,7 +230,7 @@ abstract class CControllerBGHost extends CController {
 		}
 		unset($group);
 
-		$filter['sortorder'] == 'ASC' ? ksort($host_groups_to_show) : krsort($host_groups_to_show);
+		$filter['sortorder'] == ZBX_SORT_DOWN ? krsort($host_groups_to_show) : ksort($host_groups_to_show);
 
 		$maintenanceids = [];
 
@@ -344,12 +345,12 @@ abstract class CControllerBGHost extends CController {
 				}
 			}
 
-			switch ($order) {
-				case 'ASC':
-					asort($sortable_array, SORT_STRING);
-					break;
+			switch (strtoupper((string) $order)) {
 				case 'DESC':
 					arsort($sortable_array, SORT_STRING);
+					break;
+				default:
+					asort($sortable_array, SORT_STRING);
 					break;
 			}
 
@@ -402,7 +403,7 @@ abstract class CControllerBGHost extends CController {
 			$this->add_parent($host_groups, $fake_group_id, $parent_group_name, $filter);
 		}
 		// Sort group names
-		$filter['sortorder'] == 'ASC' ? sort($host_groups[$parent_group_name]['children']) : rsort($host_groups[$parent_group_name]['children']);
+		$filter['sortorder'] == ZBX_SORT_DOWN ? rsort($host_groups[$parent_group_name]['children']) : sort($host_groups[$parent_group_name]['children']);
 	}
 
 	/**
