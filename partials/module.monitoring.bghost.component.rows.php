@@ -22,7 +22,7 @@
  * Number of columns in the host-tree table, so component rows span the full width.
  */
 if (!defined('BGCOMP_COLSPAN')) {
-	define('BGCOMP_COLSPAN', 11);
+	define('BGCOMP_COLSPAN', 10);
 }
 
 $hostid = $data['hostid'];

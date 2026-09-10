@@ -73,7 +73,14 @@ $html_page
 			->setName('host_view')
 			->addClass('is-loading')
 	)->show();
-$this->addCssFile('modules/zabbix-module-hosts-components/views/css/bghost.css');
+// Resolve the CSS URL from the module's own deployed path instead of hardcoding the folder name.
+// The directory Zabbix installs this under is not guaranteed to be 'zabbix-module-hosts-components',
+// and a wrong path makes CHtmlPageHeader::filemtime() fail (stat failed) and the styles never load.
+$bghost_module = APP::ModuleManager()->getModule('bghostcomp');
+$this->addCssFile(($bghost_module !== null
+	? $bghost_module->getRelativePath()
+	: 'modules/zabbix-module-hosts-components'
+).'/views/css/bghost.css');
 
 (new CScriptTag('
 	view.init('.json_encode([
