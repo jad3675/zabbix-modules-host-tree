@@ -110,8 +110,12 @@ abstract class CControllerBGHost extends CController {
 	 * @return array
 	 */
 	protected function getData(array $filter): array {
-		$limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT) + 1;
 		$groupids = $filter['groupids'] ? getSubGroups($filter['groupids']) : null;
+
+		// Tree-building query: intentionally NOT capped by the global search limit. This is a lightweight fetch
+		// (ids/name/status/groups, no heavy subselects), and the tree must reflect every group that has a host.
+		// Capping here at SEARCH_LIMIT truncated the host list by name and silently dropped whole subgroups whose
+		// hosts happened to sort past the cap.
 		$hosts = API::Host()->get([
 			'output' => ['hostid', 'name', 'status'],
 			'evaltype' => $filter['evaltype'],
@@ -132,7 +136,6 @@ abstract class CControllerBGHost extends CController {
 			],
                         'selectHostGroups' => ['groupid', 'name'],
 			'sortfield' => 'name',
-			'limit' => $limit,
 			'preservekeys' => true
 		]);
 
