@@ -30,8 +30,10 @@ use CPagerHelper;
 
 abstract class CControllerBGHost extends CController {
 
-	// Filter idx prefix.
-	const FILTER_IDX = 'web.monitoring.hosts';
+	// Filter idx prefix. Must be unique to this module: reusing the stock 'web.monitoring.hosts' key made the
+	// module share the core Monitoring->Hosts page's stored filter state (inherited filters, mismatched tab
+	// uniqids that broke the host-group multiselect binding).
+	const FILTER_IDX = 'web.monitoring.bghostcomp';
 
 	// Filter fields default values.
 	const FILTER_FIELDS_DEFAULT = [
