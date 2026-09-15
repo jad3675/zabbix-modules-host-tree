@@ -23,11 +23,10 @@ namespace Modules\BGmotHostsComponents\Actions;
 
 use CControllerResponseData;
 use CRoleHelper;
-use CTabFilterProfile;
 use CUrl;
 
 /**
- * Controller for the "Host->Monitoring" asynchronous refresh page.
+ * Controller for the Hosts | Components asynchronous tree refresh.
  */
 class CControllerBGHostViewRefresh extends CControllerBGHostView {
 
@@ -38,45 +37,24 @@ class CControllerBGHostViewRefresh extends CControllerBGHostView {
 	protected function doAction(): void {
 		$filter = static::FILTER_FIELDS_DEFAULT;
 
-		if ($this->getInput('filter_counters', 0)) {
-			$profile = (new CTabFilterProfile(static::FILTER_IDX, static::FILTER_FIELDS_DEFAULT))->read();
-			$filters = $this->hasInput('counter_index')
-				? [$profile->getTabFilter($this->getInput('counter_index'))]
-				: $profile->getTabsWithDefaults();
-			$filter_counters = [];
+		$this->getInputs($filter, ['name', 'groupids', 'ip', 'dns', 'port', 'status', 'evaltype', 'tags',
+			'maintenance_status', 'sort', 'sortorder'
+		]);
+		$filter = $this->cleanInput($filter);
+		$filter = self::sanitizeFilter($filter);
 
-			foreach ($filters as $index => $tabfilter) {
-				$tabfilter = self::sanitizeFilter($tabfilter);
+		$view_url = (new CUrl())->setArgument('action', 'bghostcomp.view');
 
-				$filter_counters[$index] = $tabfilter['filter_show_counter'] ? $this->getCount($tabfilter) : 0;
-			}
+		$data = [
+			'filter' => $filter,
+			'view_curl' => $view_url,
+			'sort' => $filter['sort'],
+			'sortorder' => $filter['sortorder'],
+			'allowed_ui_latest_data' => $this->checkAccess(CRoleHelper::UI_MONITORING_LATEST_DATA),
+			'allowed_ui_problems' => $this->checkAccess(CRoleHelper::UI_MONITORING_PROBLEMS)
+		] + $this->getData($filter);
 
-			$this->setResponse(
-				(new CControllerResponseData([
-					'main_block' => json_encode(['filter_counters' => $filter_counters])
-				]))->disableView()
-			);
-		}
-		else {
-			$this->getInputs($filter, array_keys($filter));
-			$filter = $this->cleanInput($filter);
-			$filter = self::sanitizeFilter($filter);
-
-			$view_url = (new CUrl())
-				->setArgument('action', 'bghostcomp.view')
-				->removeArgument('page');
-
-			$data = [
-				'filter' => $filter,
-				'view_curl' => $view_url,
-				'sort' => $filter['sort'],
-				'sortorder' => $filter['sortorder'],
-				'allowed_ui_latest_data' => $this->checkAccess(CRoleHelper::UI_MONITORING_LATEST_DATA),
-				'allowed_ui_problems' => $this->checkAccess(CRoleHelper::UI_MONITORING_PROBLEMS)
-			] + $this->getData($filter);
-
-			$response = new CControllerResponseData($data);
-			$this->setResponse($response);
-		}
+		$response = new CControllerResponseData($data);
+		$this->setResponse($response);
 	}
 }

@@ -24,6 +24,7 @@
  */
 
 $this->addJsFile('layout.mode.js');
+$this->addJsFile('multiselect.js');
 
 $this->includeJsFile('monitoring.host.view.js.php', $data);
 
@@ -49,22 +50,51 @@ $html_page = (new CHtmlPage())
 	);
 
 if ($web_layout_mode == ZBX_LAYOUT_NORMAL) {
-	$filter = (new CTabFilter())
-		->setId('monitoring_hosts_filter')
-		->setOptions($data['tabfilter_options'])
-		->addTemplate(new CPartial($data['filter_view'], $data['filter_defaults']));
+	$filter = $data['filter'];
 
-	foreach ($data['filter_tabs'] as $tab) {
-		$tab['tab_view'] = $data['filter_view'];
-		$filter->addTemplatedTab($tab['filter_name'], $tab);
-	}
+	// Host-group multiselect. add_post_js defaults to true, so CMultiSelect emits its own inline init script and
+	// builds itself on document-ready -- no dependency on the tab-filter render event that previously never fired.
+	$groups_multiselect = (new CMultiSelect([
+		'name' => 'groupids[]',
+		'object_name' => 'hostGroup',
+		'data' => $data['groups_multiselect'],
+		'popup' => [
+			'parameters' => [
+				'srctbl' => 'host_groups',
+				'srcfld1' => 'groupid',
+				'dstfrm' => 'zbx_filter',
+				'dstfld1' => 'filter_groupids',
+				'with_hosts' => true,
+				'enrich_parent_groups' => true
+			]
+		]
+	]))
+		->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
+		->setId('filter_groupids');
 
-	// Set javascript options for tab filter initialization in monitoring.host.view.js.php file.
-	$data['filter_options'] = $filter->options;
-	$html_page->addItem($filter);
-}
-else {
-	$data['filter_options'] = null;
+	$filter_column1 = (new CFormList())
+		->addRow(_('Name'),
+			(new CTextBox('name', $filter['name']))->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
+		)
+		->addRow((new CLabel(_('Host groups'), 'filter_groupids_ms')), $groups_multiselect);
+
+	$filter_column2 = (new CFormList())
+		->addRow(_('Status'),
+			(new CRadioButtonList('status', (int) $filter['status']))
+				->addValue(_('Any'), -1)
+				->addValue(_('Enabled'), HOST_STATUS_MONITORED)
+				->addValue(_('Disabled'), HOST_STATUS_NOT_MONITORED)
+				->setModern(true)
+		);
+
+	$html_page->addItem(
+		(new CFilter())
+			->setResetUrl((new CUrl('zabbix.php'))->setArgument('action', 'bghostcomp.view'))
+			->setProfile('web.monitoring.bghostcomp.filter')
+			->setActiveTab(1)
+			->addVar('action', 'bghostcomp.view')
+			->addFilterTab(_('Filter'), [$filter_column1, $filter_column2])
+	);
 }
 
 $html_page
@@ -84,7 +114,6 @@ $this->addCssFile(($bghost_module !== null
 
 (new CScriptTag('
 	view.init('.json_encode([
-		'filter_options' => $data['filter_options'],
 		'refresh_url' => $data['refresh_url'],
 		'refresh_interval' => $data['refresh_interval'],
 		'applied_filter_groupids' => $data['filter_groupids']

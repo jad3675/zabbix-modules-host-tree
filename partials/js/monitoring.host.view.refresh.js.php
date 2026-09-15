@@ -152,6 +152,17 @@
 			var $rows = $(response.body);
 			$rows.attr('data-component_of', hostid);
 
+			// Indent the injected block so it nests under the host row instead of sitting at the same indent.
+			// The host's tree depth is stamped on its row; component rows read it via a CSS custom property.
+			var tree_level = parseInt($host_row.attr('data-tree-level'), 10);
+			if (isNaN(tree_level)) {
+				tree_level = 0;
+			}
+			var host_indent = (tree_level * 20) + 'px';
+			$rows.each(function() {
+				this.style.setProperty('--bgcomp-host-indent', host_indent);
+			});
+
 			// Stamp injected rows with the host row's group attributes so the tree's
 			// collapse/expand machinery hides and shows them along with their host.
 			if ($host_row.length) {

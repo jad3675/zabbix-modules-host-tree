@@ -178,6 +178,9 @@ function addGroupRow($data, &$rows, $group_name, $parent_group_name, $level, &$c
 		// Mark the host row so the component expander JS can inject rows beneath it.
 		$table_row_host->setAttribute('data-host_row', $host['hostid']);
 
+		// Record the host's tree depth so injected component rows can be indented to sit under it, not beside it.
+		$table_row_host->setAttribute('data-tree-level', (string) $level);
+
 		addParentGroupClass($data, $table_row_host, $group_name);
 		$host_rows[] = $table_row_host;
 	}

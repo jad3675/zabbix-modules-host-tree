@@ -21,13 +21,12 @@
 
 namespace Modules\BGmotHostsComponents\Actions;
 
+use API;
+use CArrayHelper;
 use CControllerResponseData;
 use CControllerResponseFatal;
 use CRoleHelper;
-use CTabFilterProfile;
 use CUrl;
-use CWebUser;
-use CCsrfTokenHelper;
 
 class CControllerBGHostView extends CControllerBGHost {
 
@@ -48,13 +47,8 @@ class CControllerBGHostView extends CControllerBGHost {
 			'maintenance_status' =>		'in '.HOST_MAINTENANCE_STATUS_OFF.','.HOST_MAINTENANCE_STATUS_ON,
 			'sort' =>			'in name,status',
 			'sortorder' =>			'in '.ZBX_SORT_UP.','.ZBX_SORT_DOWN,
-			'page' =>			'ge 1',
-			'filter_name' =>		'string',
-			'filter_custom_time' =>		'in 1,0',
-			'filter_show_counter' =>	'in 1,0',
-			'filter_counters' =>		'in 1',
-			'filter_reset' =>		'in 1',
-			'counter_index' =>		'ge 0'
+			'filter_set' =>			'in 1',
+			'filter_rst' =>			'in 1'
 		];
 
 		$ret = $this->validateInput($fields);
@@ -84,48 +78,54 @@ class CControllerBGHostView extends CControllerBGHost {
 	}
 
 	protected function doAction(): void {
-		$filter_tabs = [];
-		$profile = (new CTabFilterProfile(static::FILTER_IDX, static::FILTER_FIELDS_DEFAULT))->read();
+		// Simple, self-contained filter: read the current values straight from the request (or fall back to
+		// defaults on reset). No CTabFilterProfile, no shared 'web.monitoring.hosts' state, no templated tab
+		// machinery -- that indirection is what kept breaking the host-group multiselect.
+		$filter = static::FILTER_FIELDS_DEFAULT;
 
-		if ($this->hasInput('filter_reset')) {
-			$profile->reset();
-		}
-		else {
-			$profile->setInput($this->cleanInput($this->getInputAll()));
-		}
-
-		foreach ($profile->getTabsWithDefaults() as $index => $filter_tab) {
-			if ($index == $profile->selected) {
-				// Initialize multiselect data for filter_scr to allow tabfilter correctly handle unsaved state.
-				$filter_tab['filter_src']['filter_view_data'] = $this->getAdditionalData($filter_tab['filter_src']);
-			}
-
-			$filter_tabs[] = $filter_tab + ['filter_view_data' => $this->getAdditionalData($filter_tab)];
+		if (!$this->hasInput('filter_rst')) {
+			$this->getInputs($filter, ['name', 'groupids', 'ip', 'dns', 'port', 'status', 'evaltype', 'tags',
+				'maintenance_status', 'sort', 'sortorder'
+			]);
 		}
 
-		$filter = $filter_tabs[$profile->selected];
+		$filter = $this->cleanInput($filter);
 		$filter = self::sanitizeFilter($filter);
 
-		$refresh_curl = new CUrl('zabbix.php');
-		$filter['action'] = 'bghostcomp.view.refresh';
-		array_map([$refresh_curl, 'setArgument'], array_keys($filter), $filter);
+		// Pre-selected host groups for the multiselect widget (chips shown on load).
+		$groups_multiselect = [];
+
+		if ($filter['groupids']) {
+			$groups = API::HostGroup()->get([
+				'output' => ['groupid', 'name'],
+				'groupids' => $filter['groupids'],
+				'preservekeys' => true
+			]);
+			$groups_multiselect = CArrayHelper::renameObjectsKeys(array_values($groups), ['groupid' => 'id']);
+		}
+
+		// Carry the current filter on the AJAX refresh URL so the initial tree load already reflects it.
+		$refresh_curl = (new CUrl('zabbix.php'))->setArgument('action', 'bghostcomp.view.refresh');
+
+		foreach (['name', 'status', 'evaltype', 'maintenance_status', 'sort', 'sortorder'] as $key) {
+			$refresh_curl->setArgument($key, $filter[$key]);
+		}
+
+		if ($filter['groupids']) {
+			$refresh_curl->setArgument('groupids', $filter['groupids']);
+		}
+
+		if ($filter['tags']) {
+			$refresh_curl->setArgument('tags', $filter['tags']);
+		}
 
 		$data = [
 			'refresh_url' => $refresh_curl->getUrl(),
-			'refresh_interval' => 3600000,
-			'filter_view' => 'module.monitoring.host.filter',
-			'filter_defaults' => $profile->filter_defaults,
-			'filter_groupids' => $this->getInput('groupids', []),
-			'filter_tabs' => $filter_tabs,
-			'can_create_hosts' => $this->checkAccess(CRoleHelper::UI_CONFIGURATION_HOSTS),
-			'tabfilter_options' => [
-				'idx' => static::FILTER_IDX,
-				'selected' => $profile->selected,
-				'support_custom_time' => 0,
-				'expanded' => $profile->expanded,
-				'page' => $filter['page'],
-				'csrf_token' => CCsrfTokenHelper::get('tabfilter')
-			]
+			'refresh_interval' => 0,
+			'filter' => $filter,
+			'groups_multiselect' => $groups_multiselect,
+			'filter_groupids' => $filter['groupids'],
+			'can_create_hosts' => $this->checkAccess(CRoleHelper::UI_CONFIGURATION_HOSTS)
 		];
 
 		$response = new CControllerResponseData($data);

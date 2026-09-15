@@ -23,6 +23,14 @@
       border-top-color: #0275b8; }
 
 /* Component tree-view rows (bghost.component.view). */
+
+/* Nest the injected component block under its host row instead of at the same indent.
+   --bgcomp-host-indent is set per-injection from the host's tree depth (see the expander JS); the base offset
+   clears the host name + expander so bucket/instance/item rows clearly read as children. The internal
+   .bgcomp-indent-* steps below then stack on top of this for bucket -> instance -> item nesting. */
+.bgcomp-row > td:first-child {
+  padding-left: calc(var(--bgcomp-host-indent, 0px) + 40px); }
+
 .bgcomp-indent {
   display: inline-block;
   height: 1px; }

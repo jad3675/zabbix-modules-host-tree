@@ -21,17 +21,21 @@
 
 /**
  * @var CView $this
+ *
+ * Page controller for Hosts | Components.
+ *
+ * The filter is a plain CFilter form: pressing Apply submits it (GET) and reloads the page with the filter in the
+ * URL, which the controller reads back. This script only owns the AJAX load of the host tree into the page and the
+ * "Create host" popup. There is no tab-filter machinery here anymore.
  */
 
 ?>
 <script type="text/javascript">
 	const view = {
 		host_view_form: null,
-		filter: null,
 		refresh_url: null,
 		refresh_simple_url: null,
 		refresh_interval: null,
-		refresh_counters: null,
 		running: false,
 		timeout: null,
 		deferred: null,
@@ -39,124 +43,26 @@
 		_refresh_message_box: null,
 		_popup_message_box: null,
 
-		init({filter_options, refresh_url, refresh_interval, applied_filter_groupids}) {
+		init({refresh_url, refresh_interval, applied_filter_groupids}) {
 			this.refresh_url = new Curl(refresh_url);
 			this.refresh_interval = refresh_interval;
-			this.applied_filter_groupids = applied_filter_groupids;
+			this.applied_filter_groupids = applied_filter_groupids || [];
 
 			const url = new Curl('zabbix.php');
 			url.setArgument('action', 'bghostcomp.view.refresh');
 			this.refresh_simple_url = url.getUrl();
 
-			this.initTabFilter(filter_options);
 			this.initEvents();
-			this.initPopupListeners();
 
 			this.host_view_form = $('form[name=host_view]');
 			this.running = true;
 			this.refresh();
 		},
 
-		initTabFilter(filter_options) {
-			if (!filter_options) {
-				return;
-			}
-
-			this.refresh_counters = this.createCountersRefresh(1);
-			this.filter = new CTabFilter($('#monitoring_hosts_filter')[0], filter_options);
-			this.filter.on(TABFILTER_EVENT_URLSET, () => {
-				this.reloadPartialAndTabCounters();
-			});
-		},
-
 		initEvents() {
 			document.querySelector('.js-create-host')?.addEventListener('click', () => {
-				ZABBIX.PopupManager.open('host.edit', {groupids: this.applied_filter_groupids});
+				this.createHost();
 			});
-		},
-
-		initPopupListeners() {
-			ZABBIX.EventHub.subscribe({
-				require: {
-					context: CPopupManager.EVENT_CONTEXT,
-					event: CPopupManagerEvent.EVENT_OPEN
-				},
-				callback: () => this.unscheduleRefresh()
-			});
-
-			ZABBIX.EventHub.subscribe({
-				require: {
-					context: CPopupManager.EVENT_CONTEXT,
-					event: CPopupManagerEvent.EVENT_CANCEL
-				},
-				callback: () => this.scheduleRefresh()
-			});
-
-			ZABBIX.EventHub.subscribe({
-				require: {
-					context: CPopupManager.EVENT_CONTEXT,
-					event: CPopupManagerEvent.EVENT_SUBMIT
-				},
-				callback: ({data, event}) => {
-					event.preventDefault();
-
-					if ('success' in data.submit) {
-						this._addPopupMessage(
-							makeMessageBox('good', data.submit.success.messages, data.submit.success.title)
-						);
-					}
-
-					this.reloadPartialAndTabCounters();
-				}
-			});
-		},
-
-		createCountersRefresh(timeout) {
-			if (this.refresh_counters) {
-				clearTimeout(this.refresh_counters);
-				this.refresh_counters = null;
-			}
-
-			return setTimeout(() => this.getFiltersCounters(), timeout);
-		},
-
-		getFiltersCounters() {
-			return $.post(this.refresh_simple_url, {
-				filter_counters: 1
-			})
-			.done((json) => {
-				if (json.filter_counters) {
-					this.filter.updateCounters(json.filter_counters);
-				}
-			})
-			.always(() => {
-				if (this.refresh_interval > 0) {
-					this.refresh_counters = this.createCountersRefresh(this.refresh_interval);
-				}
-			});
-		},
-
-		reloadPartialAndTabCounters() {
-			this.refresh_url = new Curl('');
-
-			this.unscheduleRefresh();
-			this.refresh();
-
-			// Filter is not present in Kiosk mode.
-			if (this.filter) {
-				const filter_item = this.filter._active_item;
-
-				if (this.filter._active_item.hasCounter()) {
-					$.post(this.refresh_simple_url, {
-						filter_counters: 1,
-						counter_index: filter_item._index
-					}).done((json) => {
-						if (json.filter_counters) {
-							filter_item.updateCounter(json.filter_counters.pop());
-						}
-					});
-				}
-			}
 		},
 
 		_addRefreshMessage(messages) {
@@ -191,7 +97,7 @@
 			this.setLoading();
 
 			const params = this.refresh_url.getArgumentsObject();
-			const exclude = ['action', 'filter_src', 'filter_show_counter', 'filter_custom_time', 'filter_name'];
+			const exclude = ['action'];
 			const post_data = Object.keys(params)
 				.filter(key => !exclude.includes(key))
 				.reduce((post_data, key) => {
@@ -295,7 +201,7 @@
 		},
 
 		createHost() {
-			const host_data = this.applied_filter_groupids
+			const host_data = this.applied_filter_groupids.length
 				? {groupids: this.applied_filter_groupids}
 				: {};
 
@@ -341,7 +247,7 @@
 					view._addPopupMessage(makeMessageBox('good', messages, title));
 				}
 
-				view.reloadPartialAndTabCounters();
+				view.refresh();
 			}
 		}
 	};

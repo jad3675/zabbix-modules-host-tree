@@ -22,18 +22,11 @@
 namespace Modules\BGmotHostsComponents\Actions;
 
 use CController;
-use CSettingsHelper;
 use API;
 use CArrayHelper;
 use CUrl;
-use CPagerHelper;
 
 abstract class CControllerBGHost extends CController {
-
-	// Filter idx prefix. Must be unique to this module: reusing the stock 'web.monitoring.hosts' key made the
-	// module share the core Monitoring->Hosts page's stored filter state (inherited filters, mismatched tab
-	// uniqids that broke the host-group multiselect binding).
-	const FILTER_IDX = 'web.monitoring.bghostcomp';
 
 	// Filter fields default values.
 	const FILTER_FIELDS_DEFAULT = [
@@ -50,47 +43,6 @@ abstract class CControllerBGHost extends CController {
 		'sort' => 'name',
 		'sortorder' => ZBX_SORT_UP
 	];
-
-	/**
-	 * Get host list results count for passed filter.
-	 *
-	 * @param array  $filter                        Filter options.
-	 * @param string $filter['name']                Filter hosts by name.
-	 * @param array  $filter['groupids']            Filter hosts by host groups.
-	 * @param string $filter['ip']                  Filter hosts by IP.
-	 * @param string $filter['dns']	                Filter hosts by DNS.
-	 * @param string $filter['port']                Filter hosts by port.
-	 * @param string $filter['status']              Filter hosts by status.
-	 * @param string $filter['evaltype']            Filter hosts by tags.
-	 * @param string $filter['tags']                Filter hosts by tag names and values.
-	 * @param int    $filter['maintenance_status']  Filter hosts by maintenance.
-	 *
-	 * @return int
-	 */
-	protected function getCount(array $filter): int {
-		$groupids = $filter['groupids'] ? getSubGroups($filter['groupids']) : null;
-
-		return (int) API::Host()->get([
-			'countOutput' => true,
-			'evaltype' => $filter['evaltype'],
-			'tags' => $filter['tags'],
-			'inheritedTags' => true,
-			'groupids' => $groupids,
-			'search' => [
-				'name' => ($filter['name'] === '') ? null : $filter['name'],
-				'ip' => ($filter['ip'] === '') ? null : $filter['ip'],
-				'dns' => ($filter['dns'] === '') ? null : $filter['dns']
-			],
-			'filter' => [
-				'status' => ($filter['status'] == -1) ? null : $filter['status'],
-				'port' => ($filter['port'] === '') ? null : $filter['port'],
-				'maintenance_status' => ($filter['maintenance_status'] == HOST_MAINTENANCE_STATUS_ON)
-					? null
-					: HOST_MAINTENANCE_STATUS_OFF
-			],
-			'limit' => CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT) + 1
-		]);
-	}
 
 	/**
 	 * Prepares the host list based on the given filter and sorting options.
@@ -409,27 +361,6 @@ abstract class CControllerBGHost extends CController {
 		}
 		// Sort group names
 		$filter['sortorder'] == ZBX_SORT_DOWN ? rsort($host_groups[$parent_group_name]['children']) : sort($host_groups[$parent_group_name]['children']);
-	}
-
-	/**
-	 * Get additional data for filters. Selected groups for multiselect, etc.
-	 *
-	 * @param array $filter  Filter fields values array.
-	 *
-	 * @return array
-	 */
-	protected function getAdditionalData($filter): array {
-		$data = [];
-
-		if ($filter['groupids']) {
-			$groups = API::HostGroup()->get([
-				'output' => ['groupid', 'name'],
-				'groupids' => $filter['groupids']
-			]);
-			$data['groups_multiselect'] = CArrayHelper::renameObjectsKeys(array_values($groups), ['groupid' => 'id']);
-		}
-
-		return $data;
 	}
 
 	/**
