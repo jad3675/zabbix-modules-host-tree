@@ -54,10 +54,15 @@ if ($web_layout_mode == ZBX_LAYOUT_NORMAL) {
 
 	// Host-group multiselect. add_post_js defaults to true, so CMultiSelect emits its own inline init script and
 	// builds itself on document-ready -- no dependency on the tab-filter render event that previously never fired.
+	// add_post_js is disabled on purpose. CMultiSelect builds its self-init script at CONSTRUCTION time using the
+	// id derived from the field name ('groupids_'); calling setId() afterwards would leave that script pointing at
+	// a now-nonexistent element, so the widget would never initialize (no box, not typeable). Instead we set a
+	// known id here and initialize it explicitly in the document-ready script below, against that same id.
 	$groups_multiselect = (new CMultiSelect([
 		'name' => 'groupids[]',
 		'object_name' => 'hostGroup',
 		'data' => $data['groups_multiselect'],
+		'add_post_js' => false,
 		'popup' => [
 			'parameters' => [
 				'srctbl' => 'host_groups',
@@ -113,6 +118,7 @@ $this->addCssFile(($bghost_module !== null
 ).'/views/css/bghost.css');
 
 (new CScriptTag('
+	jQuery("#filter_groupids").multiSelect();
 	view.init('.json_encode([
 		'refresh_url' => $data['refresh_url'],
 		'refresh_interval' => $data['refresh_interval'],
