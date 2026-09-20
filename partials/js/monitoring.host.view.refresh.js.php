@@ -357,6 +357,13 @@
 					itemids: [itemid],
 					from: from,
 					to: 'now',
+					// Required. chart.php feeds these to getTimeSelectorPeriod(), whose
+					// first branch is "if profileIdx is null, replace from/to with the
+					// system default period". Without it every range draws the same graph.
+					// chart.php only ever reads this profile, never writes it, and we
+					// always send from/to, so nothing of the user's is touched.
+					profileIdx: 'web.bgcomp.graph.filter',
+					profileIdx2: itemid,
 					type: 0,
 					width: Math.max(300, Math.round(avail - 110)),
 					height: 260,
