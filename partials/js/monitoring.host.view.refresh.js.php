@@ -375,6 +375,80 @@
 		bgcompApplyState(hostid);
 	}
 
+	// In-flight requests live on window so a refresh (which re-runs this script)
+	// doesn't fire a second fetch for a big host whose first one is still running.
+	// Without this, a host slower than the refresh interval gets one extra request
+	// per refresh, all against the same PHP memory limit.
+	window.bgcomp_inflight = window.bgcomp_inflight || {};
+
+	function bgcompStatusRow(hostid, kind, content) {
+		bgcompClearStatus(hostid);
+
+		var $host_row = $('tr[data-host_row="' + hostid + '"]');
+
+		if (!$host_row.length) {
+			return;
+		}
+
+		// Not data-component_of: these rows must never be mistaken for a loaded
+		// block by the "already injected" check below.
+		var $row = $('<tr>')
+			.addClass('bgcomp-row bgcomp-status-row bgcomp-status-' + kind)
+			.attr('data-bgcomp-status-for', hostid)
+			.append($('<td>').attr('colspan', 10).append(content));
+
+		$host_row.after($row);
+	}
+
+	function bgcompClearStatus(hostid) {
+		$('tr[data-bgcomp-status-for="' + hostid + '"]').remove();
+	}
+
+	function bgcompFail(hostid, message) {
+		// Forget the host so every refresh doesn't retry a request that is going to
+		// fail the same way. Clicking the chevron again retries.
+		delete bgcomp_state.hosts[hostid];
+		bgcompChevron($('.js-component-toggle[data-hostid="' + hostid + '"] span'), false);
+
+		bgcompStatusRow(hostid, 'error', [
+			$('<span>').addClass('bgcomp-status-label').text(<?= json_encode(_('Could not load components:')) ?>),
+			' ',
+			$('<span>').text(message)
+		]);
+	}
+
+	// Pull something readable out of an error body: PHP fatals, Zabbix error
+	// JSON, or an HTML error page.
+	function bgcompErrorText(jqXHR, text_status) {
+		var parts = [];
+
+		if (jqXHR.status) {
+			parts.push('HTTP ' + jqXHR.status);
+		}
+
+		if (text_status === 'timeout') {
+			parts.push(<?= json_encode(_('request timed out')) ?>);
+		}
+		else if (text_status === 'parsererror') {
+			parts.push(<?= json_encode(_('response was not valid JSON')) ?>);
+		}
+
+		var body = jqXHR.responseText || '';
+
+		if (body) {
+			var snippet = $('<div>').html(body).text().replace(/\s+/g, ' ').trim();
+
+			if (snippet) {
+				parts.push(snippet.length > 300 ? snippet.substr(0, 300) + '\u2026' : snippet);
+			}
+		}
+		else if (text_status === 'parsererror') {
+			parts.push(<?= json_encode(_('(empty body, check the PHP error log for memory_limit or max_execution_time)')) ?>);
+		}
+
+		return parts.join(' | ');
+	}
+
 	// Expand one host: show already-injected rows, or fetch and inject them.
 	function bgcompExpandHost(hostid) {
 		var $chevron = $('.js-component-toggle[data-hostid="' + hostid + '"] span'),
@@ -383,8 +457,18 @@
 		bgcompChevron($chevron, true);
 
 		if ($existing.length) {
+			bgcompClearStatus(hostid);
 			$existing.removeClass('bgcomp-hide-host');
 			bgcompApplyState(hostid);
+			return;
+		}
+
+		bgcompStatusRow(hostid, 'loading', [
+			$('<span>').addClass('bgcomp-spinner'),
+			$('<span>').text(<?= json_encode(_('Loading components...')) ?>)
+		]);
+
+		if (window.bgcomp_inflight[hostid]) {
 			return;
 		}
 
@@ -392,30 +476,51 @@
 		url.setArgument('action', 'bghostcomp.component.view');
 		url.setArgument('hostid', hostid);
 
-		$.ajax({
+		window.bgcomp_inflight[hostid] = $.ajax({
 			url: url.getUrl(),
 			type: 'get',
-			dataType: 'json'
+			dataType: 'json',
+			timeout: 120000
 		}).done(function(response) {
-			if (!response || typeof response.body === 'undefined') {
+			// Collapsed while loading: drop the result, the next expand refetches.
+			if (!bgcomp_state.hosts[hostid]) {
+				bgcompClearStatus(hostid);
 				return;
 			}
 
-			// The tree may have been replaced by a refresh while this was in flight.
-			if (!bgcomp_state.hosts[hostid] || $('tr[data-component_of="' + hostid + '"]').length) {
+			if (!response || typeof response.body === 'undefined') {
+				var msg = <?= json_encode(_('unexpected response')) ?>;
+
+				if (response && response.bgcomp_error) {
+					msg = response.bgcomp_error;
+				}
+				else if (response && response.error) {
+					msg = [response.error.title || ''].concat(response.error.messages || []).join(' ').trim()
+						|| msg;
+				}
+
+				bgcompFail(hostid, msg);
+				return;
+			}
+
+			bgcompClearStatus(hostid);
+
+			// A refresh may have landed first and a newer request injected already.
+			if ($('tr[data-component_of="' + hostid + '"]').length) {
 				return;
 			}
 
 			bgcompInjectRows(hostid, response.body);
-		}).fail(function(jqXHR) {
-			// Ignore aborts caused by page unload or a refresh.
-			if (jqXHR.status === 0) {
+		}).fail(function(jqXHR, text_status) {
+			// Page unload. Nothing to report.
+			if (text_status === 'abort') {
+				bgcompClearStatus(hostid);
 				return;
 			}
 
-			// Revert chevron and state on failure so the user can retry.
-			delete bgcomp_state.hosts[hostid];
-			bgcompChevron($('.js-component-toggle[data-hostid="' + hostid + '"] span'), false);
+			bgcompFail(hostid, bgcompErrorText(jqXHR, text_status));
+		}).always(function() {
+			delete window.bgcomp_inflight[hostid];
 		});
 	}
 
@@ -430,6 +535,7 @@
 			// machinery's DISPLAY_NONE, so the two layers stay independent).
 			bgcompChevron($chevron, false);
 			delete bgcomp_state.hosts[hostid];
+			bgcompClearStatus(hostid);
 			$('tr[data-component_of="' + hostid + '"]').addClass('bgcomp-hide-host');
 			return;
 		}

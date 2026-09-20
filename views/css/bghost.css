@@ -308,3 +308,30 @@ tr.bgcomp-filtering.bgcomp-hide-filter {
   cursor: pointer; }
   .bgcomp-instance-alias:hover {
     color: #0275b8; }
+
+/* Loading / error row shown under a host while its block is being fetched. */
+.bgcomp-status-row > td {
+  padding: 6px 8px 6px 28px; }
+
+.bgcomp-status-loading > td {
+  color: #768d99; }
+
+.bgcomp-status-error > td {
+  color: #e45959; }
+  .bgcomp-status-error .bgcomp-status-label {
+    font-weight: bold; }
+
+.bgcomp-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  vertical-align: middle;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: bgcomp-spin 0.8s linear infinite; }
+
+@keyframes bgcomp-spin {
+  to {
+    transform: rotate(360deg); } }

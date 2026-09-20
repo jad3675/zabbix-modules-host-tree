@@ -108,6 +108,9 @@ class CBGComponentGrouper {
 		$result = [];
 
 		foreach ($grouped as $bucket => $bucket_items) {
+			// Array keys: a bucket named "7" (numeric component tag value) comes
+			// back as int, and resolveInstance() is typed string under strict_types.
+			$bucket = (string) $bucket;
 			$instances = [];
 
 			foreach ($bucket_items as $key => $item) {

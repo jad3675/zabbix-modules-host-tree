@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [bghostcomp 1.3.2] - 2026-09-20
+### Fixed
+- Root cause of hosts failing to expand since 1.3.0: PHP converts numeric-string array keys to int, so instances named "1", "10" etc. (CPU cores, sensor/entity indexes) reached the new strictly typed bgcomp_instance_alias(string) as int and threw a TypeError, 500ing the whole host. Instance keys are now cast to string in the rows partial.
+- Same bug class, inherited from the original code: a numeric component-tag value as a bucket name hit resolveInstance(string) in the grouper and bgcomp_bucket_label(string) in the partial. Both cast now.
+
+## [bghostcomp 1.3.1] - 2026-09-20
+### Fixed
+- Large hosts failed to expand with no feedback. Causes addressed:
+  - Rows partial held every row's CTag object tree until the end; instance and item rows are now serialised as they are built, and the per-row age hintbox is a plain title.
+  - Severity lookup pulled every monitored trigger on the host (selectItems + skipDependent) before checking problems; it now starts from open problems.
+  - json_encode() returned false on any invalid UTF-8 byte, producing an empty body; now uses JSON_INVALID_UTF8_SUBSTITUTE and reports encode failures.
+  - Restores fired a new request on every refresh while a slow host's first request was still running; in-flight requests are now tracked across refreshes.
+### Added
+- Loading row while a host's components are fetched, and an error row with HTTP status and response snippet when it fails. Failures no longer retry on every refresh; clicking the chevron retries.
+
 ## [bghostcomp 1.3.0] - 2026-09-20
 ### Added
 - Per-host filter box at the top of each expanded block. Client-side (rows are already in the DOM), matches on bucket label + instance name + alias + item name with space-separated AND terms, shows "N of M", and survives auto-refresh via bgcomp_state.filters.

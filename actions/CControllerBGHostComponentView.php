@@ -103,29 +103,34 @@ class CControllerBGHostComponentView extends CControllerBGHost {
 			return [];
 		}
 
-		// Triggers on this host with the items they depend on.
-		$triggers = API::Trigger()->get([
-			'output' => [],
-			'selectItems' => ['itemid'],
-			'hostids' => $hostid,
-			'monitored' => true,
-			'skipDependent' => true,
-			'preservekeys' => true
-		]);
-
-		if (!$triggers) {
-			return [];
-		}
-
+		// Problems first, then only the triggers behind them. The previous order
+		// pulled every monitored trigger on the host with selectItems and
+		// skipDependent, which on a big switch is thousands of LLD triggers and a
+		// dependency walk for each, to find the handful that are actually firing.
 		$problems = API::Problem()->get([
 			'output' => ['eventid', 'severity', 'objectid'],
-			'objectids' => array_keys($triggers),
+			'hostids' => $hostid,
 			'source' => EVENT_SOURCE_TRIGGERS,
 			'object' => EVENT_OBJECT_TRIGGER,
 			'recent' => false
 		]);
 
 		if (!$problems) {
+			return [];
+		}
+
+		// Same semantics as before (monitored, dependency-suppressed excluded), now
+		// bounded by the number of open problems rather than triggers.
+		$triggers = API::Trigger()->get([
+			'output' => [],
+			'selectItems' => ['itemid'],
+			'triggerids' => array_values(array_unique(array_column($problems, 'objectid'))),
+			'monitored' => true,
+			'skipDependent' => true,
+			'preservekeys' => true
+		]);
+
+		if (!$triggers) {
 			return [];
 		}
 

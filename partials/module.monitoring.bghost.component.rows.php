@@ -90,6 +90,9 @@ else {
 	$bucket_idx = 0;
 
 	foreach ($grouped as $bucket => $instances) {
+		// Same int-key trap as instances below: a tag-derived bucket named "2"
+		// arrives as int and bgcomp_bucket_label() is typed string.
+		$bucket = (string) $bucket;
 		$bucket_idx++;
 		$bucket_key = $hostid.'-'.$bucket_idx;
 
@@ -143,6 +146,11 @@ else {
 		$instance_idx = 0;
 
 		foreach ($instances as $instance => $items) {
+			// PHP turns numeric-string array keys into ints, so an instance named
+			// "1" or "10" (CPU cores, sensor/entity indexes) arrives here as int.
+			// This file is strict_types, so anything typed string downstream would
+			// throw a TypeError and 500 the whole host. Cast once, here.
+			$instance = (string) $instance;
 			$is_direct = ($instance === '__direct');
 			$instance_idx++;
 			$instance_key = $bucket_key.'-'.$instance_idx;
@@ -206,7 +214,9 @@ else {
 					$instance_row->addClass('bgcomp-hide-bucket');
 				}
 
-				$rows[] = $instance_row;
+				// Serialise immediately: on a 400-port chassis, holding every row's
+				// CTag tree until the end is what blows memory_limit.
+				$rows[] = $instance_row->toString();
 
 				// Restart zebra striping inside each instance.
 				$stripe = false;
@@ -231,7 +241,7 @@ else {
 					}
 				}
 
-				$rows[] = $row;
+				$rows[] = $row->toString();
 				$stripe = !$stripe;
 			}
 		}
@@ -241,7 +251,7 @@ else {
 // Emit the rows as a bare HTML fragment (no wrapping <table>) for JS injection.
 $out = '';
 foreach ($rows as $row) {
-	$out .= $row->toString();
+	$out .= is_string($row) ? $row : $row->toString();
 }
 echo $out;
 
@@ -285,7 +295,9 @@ function bgcomp_item_row(array $item, $itemid, int $indent, bool $allowed_ui_lat
 	$age = ($item['lastclock'] > 0)
 		? (new CSpan(zbx_date2age($item['lastclock'])))
 			->addClass('bgcomp-age')
-			->setHint(zbx_date2str(DATE_TIME_FORMAT_SECONDS, $item['lastclock']))
+			// Plain title, not setHint(): a hintbox per row is an extra object tree
+			// plus an encoded payload attribute, times every item on the host.
+			->setAttribute('title', zbx_date2str(DATE_TIME_FORMAT_SECONDS, $item['lastclock']))
 		: (new CSpan('-'))->addClass(ZBX_STYLE_GREY);
 	$age_col = (new CCol($age))->addClass(ZBX_STYLE_NOWRAP)->addClass('bgcomp-age-col');
 
