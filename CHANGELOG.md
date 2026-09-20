@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [bghostcomp 1.2.0] - 2026-09-20
+### Added
+- Expanded hosts, buckets and instances survive the tree auto-refresh. State lives on window (the refresh replaces the form and re-runs the page script), and restored blocks are refetched rather than replayed from cache, so values are current.
+
+## [bghostcomp 1.1.0] - 2026-09-20
+### Changed
+- Component instances (interfaces, mountpoints, etc.) are now individually collapsible; collapsed by default, auto-expanded when an item under them has an active problem.
+- Clicking a numeric item opens its graph in an in-page popup (1h to 30d period buttons) instead of navigating away. Text/log items open history in a separate browser window. Ctrl/Cmd/middle-click still opens the full page in a new tab.
+- Bucket and instance names are clickable, same as their chevrons.
+### Fixed
+- Delegated click handlers stacked on every auto-refresh, making bucket/trends toggles fire multiple times (even count = no-op). Handlers are now namespaced and unbound before rebinding.
+
 ## [7.0.1] - 2025-12-02
 ### Changed
 - Fixed module version. When released 7.0.0 did not updated it.

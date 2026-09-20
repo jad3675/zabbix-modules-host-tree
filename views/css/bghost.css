@@ -203,3 +203,50 @@
 
 .bgcomp-spark-svg {
   display: block; }
+
+/* Instance-level collapse (interfaces, mountpoints, ...). Separate from
+   .bgcomp-hide-bucket so bucket and instance state don't overwrite each other. */
+.bgcomp-hide-instance {
+  display: none; }
+
+/* Clickable bucket / instance labels (same action as the chevron). */
+.js-bgcomp-bucket-label,
+.js-bgcomp-instance-label {
+  cursor: pointer; }
+  .js-bgcomp-bucket-label:hover,
+  .js-bgcomp-instance-label:hover {
+    color: #0275b8; }
+
+.bgcomp-instance-row .treeview {
+  vertical-align: middle; }
+
+/* Item history graph popup. */
+.bgcomp-graph-popup {
+  min-width: 600px; }
+
+.bgcomp-graph-periods {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px; }
+
+.bgcomp-period-btn {
+  min-width: 40px;
+  padding: 0 8px; }
+  .bgcomp-period-btn.bgcomp-period-active {
+    color: #ffffff;
+    background-color: #0275b8;
+    border-color: #0275b8; }
+
+.bgcomp-graph-frame {
+  position: relative;
+  min-height: 300px;
+  text-align: center; }
+
+.bgcomp-graph-img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto; }
+
+.bgcomp-graph-full {
+  display: inline-block;
+  margin-top: 8px; }

@@ -6,9 +6,11 @@
 ** Renders a single host's grouped items as <tr> rows injected beneath the host
 ** leaf row. Structure: bucket header -> [instance sub-header] -> item rows.
 **
-** Buckets are collapsible (LM/SL1-style progressive disclosure): collapsed by
-** default, auto-expanded when they carry an active problem. Percentage metrics
-** render as inline bar gauges coloured by severity/threshold.
+** Buckets and instances are both collapsible (LM/SL1-style progressive
+** disclosure): collapsed by default, auto-expanded when they carry an active
+** problem. Instance collapse uses its own hide class so it layers cleanly under
+** the bucket collapse (re-expanding a bucket keeps its instances' state).
+** Percentage metrics render as inline bar gauges coloured by severity/threshold.
 **
 ** $data:
 **   hostid                 string
@@ -71,7 +73,10 @@ else {
 		$header_parts = [
 			bgcomp_indent(1),
 			$toggle,
-			(new CSpan(bgcomp_bucket_label($bucket)))->addClass('bgcomp-bucket-name'),
+			(new CSpan(bgcomp_bucket_label($bucket)))
+				->addClass('bgcomp-bucket-name')
+				->addClass('js-bgcomp-bucket-label')
+				->setAttribute('data-bucket', $bucket_key),
 			(new CSpan('('.$item_count.')'))->addClass('bgcomp-count')
 		];
 
@@ -97,18 +102,42 @@ else {
 		// Zebra striping resets at each bucket header for readability.
 		$stripe = false;
 
+		$instance_idx = 0;
+
 		foreach ($instances as $instance => $items) {
 			$is_direct = ($instance === '__direct');
+			$instance_idx++;
+			$instance_key = $bucket_key.'-'.$instance_idx;
 
 			// Hidden when the parent bucket is collapsed.
 			$child_hidden = !$expanded;
 
+			// Items under a real instance are hidden until that instance is expanded.
+			// __direct items have no instance header, so they only follow the bucket.
+			$instance_expanded = true;
+
 			if (!$is_direct) {
 				$instance_severity = bgcomp_items_max_severity($items, $item_severity);
 
+				// Same rule as buckets: open only if something underneath is on fire.
+				$instance_expanded = ($instance_severity !== null);
+
+				$instance_toggle = (new CSimpleButton())
+					->addClass(ZBX_STYLE_TREEVIEW)
+					->addClass('js-bgcomp-instance-toggle')
+					->setAttribute('data-instance', $instance_key)
+					->addItem(
+						(new CSpan())->addClass($instance_expanded ? ZBX_STYLE_ARROW_DOWN : ZBX_STYLE_ARROW_RIGHT)
+					);
+
 				$instance_parts = [
 					bgcomp_indent(2),
-					(new CSpan($instance))->addClass('bgcomp-instance-name')
+					$instance_toggle,
+					(new CSpan($instance))
+						->addClass('bgcomp-instance-name')
+						->addClass('js-bgcomp-instance-label')
+						->setAttribute('data-instance', $instance_key),
+					(new CSpan('('.count($items).')'))->addClass('bgcomp-count')
 				];
 
 				if ($instance_severity !== null) {
@@ -118,13 +147,17 @@ else {
 				$instance_col = (new CCol($instance_parts))->setColSpan(BGCOMP_COLSPAN);
 				$instance_row = (new CRow($instance_col))
 					->addClass('bgcomp-row bgcomp-instance-row')
-					->setAttribute('data-bgcomp-bucket', $bucket_key);
+					->setAttribute('data-bgcomp-bucket', $bucket_key)
+					->setAttribute('data-bgcomp-instance-head', $instance_key);
 
 				if ($child_hidden) {
 					$instance_row->addClass('bgcomp-hide-bucket');
 				}
 
 				$rows[] = $instance_row;
+
+				// Restart zebra striping inside each instance.
+				$stripe = false;
 			}
 
 			$item_indent = $is_direct ? 2 : 3;
@@ -136,6 +169,14 @@ else {
 
 				if ($child_hidden) {
 					$row->addClass('bgcomp-hide-bucket');
+				}
+
+				if (!$is_direct) {
+					$row->setAttribute('data-bgcomp-instance', $instance_key);
+
+					if (!$instance_expanded) {
+						$row->addClass('bgcomp-hide-instance');
+					}
 				}
 
 				$rows[] = $row;
@@ -166,7 +207,13 @@ function bgcomp_item_row(array $item, $itemid, int $indent, bool $allowed_ui_lat
 			->setArgument('action', $is_numeric ? HISTORY_GRAPH : HISTORY_VALUES)
 			->setArgument('itemids', (array) $itemid);
 
-		$name_cell = new CLink($name, $history_url->getUrl());
+		// Plain click opens a popup (see refresh JS); href kept so ctrl/middle-click
+		// still opens the full history page in a new tab.
+		$name_cell = (new CLink($name, $history_url->getUrl()))
+			->addClass('js-bgcomp-history')
+			->setAttribute('data-itemid', $itemid)
+			->setAttribute('data-numeric', $is_numeric ? '1' : '0')
+			->setAttribute('data-name', $name);
 	}
 	else {
 		$name_cell = new CSpan($name);
