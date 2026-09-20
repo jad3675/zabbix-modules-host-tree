@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [bghostcomp 1.3.0] - 2026-09-20
+### Added
+- Per-host filter box at the top of each expanded block. Client-side (rows are already in the DOM), matches on bucket label + instance name + alias + item name with space-separated AND terms, shows "N of M", and survives auto-refresh via bgcomp_state.filters.
+- Instance headers show the LLD alias (ifAlias, the port description) parsed out of the item name, e.g. "Ethernet1/2  mchplab1-azs-01", and the alias is filterable.
+### Changed
+- While a filter is active, matching rows surface out of collapsed buckets/instances without altering the stored collapse state; clearing the box restores it exactly.
+
 ## [bghostcomp 1.2.2] - 2026-09-20
 ### Fixed
 - 1.2.1 shipped with an empty manifest.json (packaging error), which made Zabbix refuse to load the module. No code change.

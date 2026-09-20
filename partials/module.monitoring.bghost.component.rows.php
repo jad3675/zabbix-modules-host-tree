@@ -12,6 +12,12 @@
 ** the bucket collapse (re-expanding a bucket keeps its instances' state).
 ** Percentage metrics render as inline bar gauges coloured by severity/threshold.
 **
+** A per-host filter box sits at the top of the block. Rows carry a
+** data-bgcomp-text haystack (lowercased) so the JS can filter client-side
+** without re-querying. Instance headers show the LLD alias (ifAlias, i.e. the
+** interface description) parsed out of the item name, and it is part of the
+** haystack, so ports can be found by their neighbour's name.
+**
 ** $data:
 **   hostid                 string
 **   grouped                bucket => [ instance|__direct => [ itemid => item ] ]
@@ -42,6 +48,37 @@ if (!$grouped) {
 	))->addClass('bgcomp-row');
 }
 else {
+	$total_items = 0;
+
+	foreach ($grouped as $bucket_instances) {
+		$total_items += bgcomp_count_items($bucket_instances);
+	}
+
+	// Per-host filter box. Deliberately unnamed: this block is injected inside
+	// the host-view form, and a named input would be submitted with the filter.
+	$filter_input = (new CTag('input', false))
+		->setAttribute('type', 'text')
+		->setAttribute('placeholder', _('Filter components'))
+		->setAttribute('autocomplete', 'off')
+		->setAttribute('data-hostid', $hostid)
+		->addClass('bgcomp-filter-input')
+		->addClass('js-bgcomp-filter');
+
+	$rows[] = (new CRow(
+		(new CCol([
+			bgcomp_indent(1),
+			$filter_input,
+			(new CSimpleButton(_('clear')))
+				->addClass('bgcomp-filter-clear')
+				->addClass('js-bgcomp-filter-clear')
+				->setAttribute('data-hostid', $hostid),
+			(new CSpan($total_items.' '._('items')))
+				->addClass('bgcomp-filter-count')
+				->addClass('js-bgcomp-filter-count')
+				->setAttribute('data-hostid', $hostid)
+		]))->setColSpan(BGCOMP_COLSPAN)
+	))->addClass('bgcomp-row bgcomp-filter-row');
+
 	// Lightweight column-header row so the expansion reads as its own table.
 	$rows[] = (new CRow([
 		(new CCol(_('Component / Item')))->setColSpan(BGCOMP_COLSPAN - 3)->addClass('bgcomp-colhead'),
@@ -97,7 +134,8 @@ else {
 		$bucket_col = (new CCol($header_parts))->setColSpan(BGCOMP_COLSPAN);
 		$rows[] = (new CRow($bucket_col))
 			->addClass('bgcomp-row bgcomp-bucket-row')
-			->setAttribute('data-bgcomp-bucket-head', $bucket_key);
+			->setAttribute('data-bgcomp-bucket-head', $bucket_key)
+			->setAttribute('data-bgcomp-text', bgcomp_haystack([bgcomp_bucket_label($bucket), $bucket]));
 
 		// Zebra striping resets at each bucket header for readability.
 		$stripe = false;
@@ -130,15 +168,28 @@ else {
 						(new CSpan())->addClass($instance_expanded ? ZBX_STYLE_ARROW_DOWN : ZBX_STYLE_ARROW_RIGHT)
 					);
 
+				// ifAlias / description, lifted out of the item name (see
+				// bgcomp_instance_alias). Empty for templates that don't carry one.
+				$instance_alias = bgcomp_instance_alias($instance, $items);
+
 				$instance_parts = [
 					bgcomp_indent(2),
 					$instance_toggle,
 					(new CSpan($instance))
 						->addClass('bgcomp-instance-name')
 						->addClass('js-bgcomp-instance-label')
-						->setAttribute('data-instance', $instance_key),
-					(new CSpan('('.count($items).')'))->addClass('bgcomp-count')
+						->setAttribute('data-instance', $instance_key)
 				];
+
+				if ($instance_alias !== '') {
+					$instance_parts[] = (new CSpan($instance_alias))
+						->addClass('bgcomp-instance-alias')
+						->addClass('js-bgcomp-instance-label')
+						->setAttribute('data-instance', $instance_key)
+						->setAttribute('title', $instance_alias);
+				}
+
+				$instance_parts[] = (new CSpan('('.count($items).')'))->addClass('bgcomp-count');
 
 				if ($instance_severity !== null) {
 					$instance_parts[] = bgcomp_severity_dot($instance_severity);
@@ -148,7 +199,8 @@ else {
 				$instance_row = (new CRow($instance_col))
 					->addClass('bgcomp-row bgcomp-instance-row')
 					->setAttribute('data-bgcomp-bucket', $bucket_key)
-					->setAttribute('data-bgcomp-instance-head', $instance_key);
+					->setAttribute('data-bgcomp-instance-head', $instance_key)
+					->setAttribute('data-bgcomp-text', bgcomp_haystack([$instance, $instance_alias]));
 
 				if ($child_hidden) {
 					$instance_row->addClass('bgcomp-hide-bucket');
@@ -251,7 +303,56 @@ function bgcomp_item_row(array $item, $itemid, int $indent, bool $allowed_ui_lat
 		$row->setAttribute('data-bgcomp-itemid', $itemid);
 	}
 
+	$row->setAttribute('data-bgcomp-text', bgcomp_haystack([$name]));
+
 	return $row;
+}
+
+/**
+ * Lowercased, space-joined match text for the client-side filter.
+ */
+function bgcomp_haystack(array $parts): string {
+	$parts = array_filter(array_map('trim', $parts), static function ($part) {
+		return $part !== '';
+	});
+
+	return mb_strtolower(implode(' ', $parts));
+}
+
+/**
+ * Pull an instance's alias out of its item names.
+ *
+ * Zabbix's SNMP network templates name item prototypes
+ * "Interface {#IFNAME}({#IFALIAS}): Bits received", so for instance
+ * "Ethernet1/2" the parenthetical right after the name is ifAlias, i.e. the
+ * description configured on the port. Nothing carries it in a tag, so the name
+ * is the only place to get it without forking the stock templates.
+ *
+ * Returns '' when the template doesn't follow that pattern, when the alias is
+ * empty (unconfigured port), or when it merely repeats the instance name.
+ */
+function bgcomp_instance_alias(string $instance, array $items): string {
+	if ($instance === '') {
+		return '';
+	}
+
+	$pattern = '/'.preg_quote($instance, '/').'\s*\(([^)]*)\)/';
+
+	foreach ($items as $item) {
+		$name = isset($item['name']) ? (string) $item['name'] : '';
+
+		if ($name === '' || !preg_match($pattern, $name, $m)) {
+			continue;
+		}
+
+		$alias = trim($m[1]);
+
+		if ($alias !== '' && strcasecmp($alias, $instance) !== 0) {
+			return $alias;
+		}
+	}
+
+	return '';
 }
 
 /**

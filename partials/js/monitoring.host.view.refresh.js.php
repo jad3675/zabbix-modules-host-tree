@@ -108,7 +108,8 @@
 	// script-local var, because the auto-refresh replaces the whole form and
 	// re-runs this script. Rows are refetched on restore rather than replayed from
 	// a cache, so a restored block shows current values instead of a stale snapshot.
-	window.bgcomp_state = window.bgcomp_state || {hosts: {}, buckets: {}, instances: {}};
+	window.bgcomp_state = window.bgcomp_state || {hosts: {}, buckets: {}, instances: {}, filters: {}};
+	window.bgcomp_state.filters = window.bgcomp_state.filters || {};
 
 	var bgcomp_state = window.bgcomp_state;
 
@@ -151,7 +152,193 @@
 				bgcompSetInstance(key, bgcomp_state.instances[key]);
 			}
 		});
+
+		// Re-apply the filter last, so it wins over the restored collapse state.
+		if (bgcomp_state.filters[hostid]) {
+			$('.js-bgcomp-filter[data-hostid="' + hostid + '"]').val(bgcomp_state.filters[hostid]);
+			bgcompApplyFilter(hostid, bgcomp_state.filters[hostid]);
+		}
 	}
+
+	// ---------------------------------------------------------------------------
+	// Per-host filter.
+	//
+	// Everything for an expanded host is already in the DOM, so this is pure class
+	// toggling: no round trip, no debounce-induced lag on the data itself.
+	//
+	// Layering: while a filter is active every row in the block carries
+	// .bgcomp-filtering, whose CSS neutralises .bgcomp-hide-bucket and
+	// .bgcomp-hide-instance. Visibility then comes solely from .bgcomp-hide-filter,
+	// so matches surface out of collapsed buckets without the stored collapse state
+	// being touched. Clearing the box hands control straight back to that state.
+	// ---------------------------------------------------------------------------
+
+	var bgcomp_filter_timers = {};
+
+	function bgcompMatches(haystack, terms) {
+		for (var i = 0; i < terms.length; i++) {
+			if (haystack.indexOf(terms[i]) === -1) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	// Chevrons would otherwise read as collapsed while their children are on show.
+	// Pre-filter state is parked on the element, not in bgcomp_state, because it is
+	// display sugar and must not survive a clear.
+	function bgcompFilterChevrons(hostid, active) {
+		$('tr[data-component_of="' + hostid + '"]')
+			.find('.js-bgcomp-bucket-toggle span, .js-bgcomp-instance-toggle span')
+			.each(function() {
+				var $chevron = $(this);
+
+				if (active) {
+					$chevron.data('bgcomp-pre-filter', $chevron.hasClass('<?= ZBX_STYLE_ARROW_DOWN ?>'));
+					bgcompChevron($chevron, true);
+				}
+				else {
+					var pre = $chevron.data('bgcomp-pre-filter');
+
+					if (typeof pre !== 'undefined') {
+						bgcompChevron($chevron, pre);
+						$chevron.removeData('bgcomp-pre-filter');
+					}
+				}
+			});
+	}
+
+	function bgcompApplyFilter(hostid, term) {
+		var $rows = $('tr[data-component_of="' + hostid + '"]');
+
+		if (!$rows.length) {
+			return;
+		}
+
+		var $count = $('.js-bgcomp-filter-count[data-hostid="' + hostid + '"]'),
+			$items = $rows.filter('.bgcomp-item-row'),
+			total = $items.length,
+			was_active = $rows.first().hasClass('bgcomp-filtering');
+
+		term = $.trim(term || '');
+
+		if (term === '') {
+			delete bgcomp_state.filters[hostid];
+			$rows.removeClass('bgcomp-filtering bgcomp-hide-filter');
+
+			if (was_active) {
+				bgcompFilterChevrons(hostid, false);
+
+				// A bucket or instance toggled while the filter was up wrote real
+				// state that the chevron restore above just overwrote. State wins.
+				bgcompApplyState(hostid);
+			}
+
+			$count.text(total + ' ' + <?= json_encode(_('items')) ?>);
+
+			return;
+		}
+
+		bgcomp_state.filters[hostid] = term;
+
+		var terms = term.toLowerCase().split(/\s+/),
+			bucket_text = {},
+			instance_text = {};
+
+		$rows.filter('[data-bgcomp-bucket-head]').each(function() {
+			bucket_text[$(this).attr('data-bgcomp-bucket-head')] = $(this).attr('data-bgcomp-text') || '';
+		});
+
+		$rows.filter('[data-bgcomp-instance-head]').each(function() {
+			instance_text[$(this).attr('data-bgcomp-instance-head')] = $(this).attr('data-bgcomp-text') || '';
+		});
+
+		// An item matches on its own name plus its instance's and bucket's text, so
+		// "network errors" or "ethernet1/2 bits" narrow the way you would expect,
+		// and a match on an instance drags its whole item list along with it.
+		var shown_buckets = {},
+			shown_instances = {},
+			matches = 0;
+
+		$items.each(function() {
+			var $row = $(this),
+				bucket_key = $row.attr('data-bgcomp-bucket'),
+				instance_key = $row.attr('data-bgcomp-instance'),
+				haystack = (bucket_text[bucket_key] || '') + ' '
+					+ (instance_key ? (instance_text[instance_key] || '') : '') + ' '
+					+ ($row.attr('data-bgcomp-text') || ''),
+				ok = bgcompMatches(haystack, terms);
+
+			$row.toggleClass('bgcomp-hide-filter', !ok);
+
+			if (ok) {
+				matches++;
+				shown_buckets[bucket_key] = true;
+
+				if (instance_key) {
+					shown_instances[instance_key] = true;
+				}
+			}
+		});
+
+		// Headers follow their children: no visible items, no header.
+		$rows.filter('[data-bgcomp-instance-head]').each(function() {
+			var key = $(this).attr('data-bgcomp-instance-head');
+			$(this).toggleClass('bgcomp-hide-filter', !shown_instances[key]);
+		});
+
+		$rows.filter('[data-bgcomp-bucket-head]').each(function() {
+			var key = $(this).attr('data-bgcomp-bucket-head');
+			$(this).toggleClass('bgcomp-hide-filter', !shown_buckets[key]);
+		});
+
+		$rows.filter('.bgcomp-colhead-row').toggleClass('bgcomp-hide-filter', matches === 0);
+
+		// The box itself stays put, otherwise there is no way to undo the filter.
+		$rows.addClass('bgcomp-filtering');
+		$rows.filter('.bgcomp-filter-row').removeClass('bgcomp-hide-filter');
+
+		if (!was_active) {
+			bgcompFilterChevrons(hostid, true);
+		}
+
+		$count.text(matches + ' ' + <?= json_encode(_('of')) ?> + ' ' + total);
+	}
+
+	$(document).off('input.bgcomp keydown.bgcomp', '.js-bgcomp-filter')
+		.on('input.bgcomp', '.js-bgcomp-filter', function() {
+			var hostid = $(this).attr('data-hostid'),
+				value = $(this).val();
+
+			clearTimeout(bgcomp_filter_timers[hostid]);
+			bgcomp_filter_timers[hostid] = setTimeout(function() {
+				bgcompApplyFilter(hostid, value);
+			}, 120);
+		})
+		.on('keydown.bgcomp', '.js-bgcomp-filter', function(e) {
+			// Enter would submit the host-view filter form; Escape clears the box
+			// rather than bubbling up to whatever else listens for it.
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				clearTimeout(bgcomp_filter_timers[$(this).attr('data-hostid')]);
+				bgcompApplyFilter($(this).attr('data-hostid'), $(this).val());
+			}
+			else if (e.key === 'Escape') {
+				e.preventDefault();
+				e.stopPropagation();
+				$(this).val('');
+				bgcompApplyFilter($(this).attr('data-hostid'), '');
+			}
+		});
+
+	$(document).off('click.bgcomp', '.js-bgcomp-filter-clear')
+		.on('click.bgcomp', '.js-bgcomp-filter-clear', function() {
+			var hostid = $(this).attr('data-hostid');
+
+			$('.js-bgcomp-filter[data-hostid="' + hostid + '"]').val('').focus();
+			bgcompApplyFilter(hostid, '');
+		});
 
 	function bgcompInjectRows(hostid, html) {
 		var $host_row = $('tr[data-host_row="' + hostid + '"]');
