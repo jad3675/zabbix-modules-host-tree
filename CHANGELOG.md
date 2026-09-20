@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [bghostcomp 1.2.2] - 2026-09-20
+### Fixed
+- 1.2.1 shipped with an empty manifest.json (packaging error), which made Zabbix refuse to load the module. No code change.
+
 ## [bghostcomp 1.2.1] - 2026-09-20
 ### Fixed
 - Graph popup period buttons (1h/3h/12h/24h/7d/30d) had no effect. chart.php passes from/to to getTimeSelectorPeriod(), which discards them and substitutes the system default period when profileIdx is absent. The popup now sends profileIdx/profileIdx2.
